@@ -10,6 +10,12 @@ interface ShapeInterface {
   shape: Shape;
 }
 
+/**
+ * Declaration file which will store declarations from all inputs.
+ * Name chosen as such to hopefully avoid collision with an input file.
+ **/
+const COMMON_FILE = "_common";
+
 const USAGE = "Usage: node json-dts.js INPUT-DIR OUTPUT-DIR";
 const INSTRUCTIONS = `
 Reads all JSON files inside INPUT-DIR (including those in subdirectories),
@@ -38,7 +44,14 @@ function readJSONSync(file: string) {
   return JSON.parse(fs.readFileSync(file, "utf-8"));
 }
 
-function getShape(obj: any) {
+/**
+ * Traverses the object recursively, generating a shape from it
+ * and then adding that shape to the cache.
+ *
+ * @param obj Shape to be added to cache.
+ * @return Hash of the given shape.
+ **/
+function getShapeHash(obj: any) {
   if (typeof obj === "string") {
     return getHash("string");
   }
@@ -53,7 +66,7 @@ function getShape(obj: any) {
   }
   if (Array.isArray(obj)) {
     if (obj.length) {
-      const first = getTypeNameFromHash(getShape(obj[0]));
+      const first = getTypeNameFromHash(getShapeHash(obj[0]));
       return getHash(first + "[]");
     }
     return getHash("unknown[]");
@@ -71,7 +84,7 @@ function getShape(obj: any) {
     } else if (value === null) {
       result[key] = "null";
     } else if (typeof value === "object") {
-      const hash = getShape(value);
+      const hash = getShapeHash(value);
       result[key] = getTypeNameFromHash(hash);
     } else {
       throw new Error("Unhandled value: " + value);
@@ -90,28 +103,35 @@ function getTypeNameFromId(id: number) {
 }
 
 let id = 0;
+/** A cache mapping hashes of shapes to the shapes themselves. */
 const db = new Map<string, ShapeInterface>();
 
-function getHash(obj: any) {
-  const hash = createHash(JSON.stringify(obj));
+/**
+ * Creates a new entry in the cache for the given shape or
+ * returns a hash if such a shape already exists in the cache.
+ */
+function getHash(shape: Shape) {
+  const hash = createHash(JSON.stringify(shape));
   if (db.has(hash)) {
     return hash;
   }
 
-  const shapeInterface = { id: id++, shape: obj };
+  const shapeInterface = { id: id++, shape };
   db.set(hash, shapeInterface);
   return hash;
 }
 
-function stringifyShape(shape: Shape) {
+/** Creates a TS type declaration for a given shape. */
+function getTypeDeclaration(typeName: string, shape: Shape) {
   if (typeof shape !== "object") {
-    return shape;
+    return `type ${typeName} = C<${shape}>;\n`;
   }
   const result: string[] = [];
   for (const key of Object.keys(shape)) {
     result.push(`${key}: ${shape[key]};`);
   }
-  return result.join(" ");
+  const declarations = result.join(" ");
+  return `type ${typeName} = C<{ ${declarations} }>;\n`;
 }
 
 const inputFiles = glob.sync("**/*.json", { cwd: inputDir });
@@ -120,15 +140,15 @@ let currentFile = 1;
 
 console.log("Parsing JSON files...");
 for (const file of inputFiles) {
-  const hash = getShape(readJSONSync(path.resolve(inputDir, file)));
+  const hash = getShapeHash(readJSONSync(path.resolve(inputDir, file)));
   exportedTypes.add(db.get(hash)!.id);
 
   mkdirp.sync(path.resolve(outputDir, path.dirname(file)));
   const outputFile = path.resolve(outputDir, file.slice(0, -5) + ".d.ts");
   const relativePath = path.relative(path.dirname(outputFile), outputDir);
   const relativeImport = relativePath
-    ? path.join(relativePath, "common")
-    : "./common";
+    ? path.join(relativePath, COMMON_FILE)
+    : "./" + COMMON_FILE;
 
   const typeName = getTypeNameFromHash(hash);
   fs.writeFileSync(
@@ -140,23 +160,24 @@ for (const file of inputFiles) {
   currentFile += 1;
 }
 
-console.log("Creating common.d.ts file...");
-const output = fs.createWriteStream(path.resolve(outputDir, "common.d.ts"));
+console.log(`Creating ${COMMON_FILE}.d.ts file...`);
+const output = fs.createWriteStream(
+  path.resolve(outputDir, COMMON_FILE + ".d.ts"),
+);
 
+// Include a Compute utility which makes resulting types easier to read
+// with Intellisense by expanding them fully, instead of leaving
+// object properties with cryptic type names.
 output.write(`type C<A extends any> = {[K in keyof A]: A[K]} & {};\n\n`);
 for (const value of db.values()) {
   const typeName = getTypeNameFromId(value.id);
-  const stringShape = stringifyShape(value.shape);
+  const typeDeclaration = getTypeDeclaration(typeName, value.shape);
   if (exportedTypes.has(value.id)) {
     output.write("export ");
   }
 
-  if (typeof value.shape !== "object") {
-    output.write(`type ${typeName} = C<${stringShape}>;\n`);
-  } else {
-    output.write(`type ${typeName} = C<{ ${stringShape} }>;\n`);
-  }
+  output.write(typeDeclaration);
 }
 
 output.close();
-console.log("common.d.ts created successfully.");
+console.log(COMMON_FILE + ".d.ts created successfully.");
