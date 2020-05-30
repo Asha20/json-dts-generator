@@ -1,8 +1,7 @@
 {
   "name": "json-dts-generator",
   "version": "0.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Generate TS declaration files from JSON files.",
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch"
@@ -17,5 +16,12 @@
   "dependencies": {
     "glob": "^7.1.6",
     "mkdirp": "^1.0.4"
-  }
+  },
+  "keywords": [
+    "typescript",
+    "json",
+    "declaration",
+    "ts",
+    "dts"
+  ]
 }
