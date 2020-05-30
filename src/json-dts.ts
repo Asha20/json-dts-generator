@@ -1,6 +1,8 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
+import * as glob from "glob";
+import * as mkdirp from "mkdirp";
 
 type Shape = string | { [key: string]: Shape };
 interface ShapeInterface {
@@ -10,15 +12,13 @@ interface ShapeInterface {
 
 const USAGE = "Usage: node json-dts.js INPUT-DIR OUTPUT-DIR";
 const INSTRUCTIONS = `
-Reads all JSON files inside INPUT-DIR (not including those in subdirectories),
+Reads all JSON files inside INPUT-DIR (including those in subdirectories),
 parses each into a TS declaration file with matching name and places those
-into OUTPUT-DIR.
+into OUTPUT-DIR, matching the folder structure inside of INPUT-DIR.
 `.trim();
 
 if (process.argv.length === 3 && ["-h", "--help"].includes(process.argv[2])) {
-  console.log(USAGE);
-  console.log();
-  console.log(INSTRUCTIONS);
+  console.log(USAGE + "\n\n" + INSTRUCTIONS);
   process.exit(0);
 }
 
@@ -114,27 +114,29 @@ function stringifyShape(shape: Shape) {
   return result.join(" ");
 }
 
-const inputFiles = fs.readdirSync(inputDir);
-let totalJSONFiles = 0;
-for (const file of inputFiles) {
-  if (file.endsWith(".json")) {
-    totalJSONFiles += 1;
-  }
-}
+const inputFiles = glob.sync("**/*.json", { cwd: inputDir });
+const exportedTypes = new Set<number>();
 let currentFile = 1;
+
 console.log("Parsing JSON files...");
 for (const file of inputFiles) {
-  if (!file.endsWith(".json")) {
-    continue;
-  }
   const hash = getShape(readJSONSync(path.resolve(inputDir, file)));
-  const typeName = getTypeNameFromHash(hash);
+  exportedTypes.add(db.get(hash)!.id);
+
+  mkdirp.sync(path.resolve(outputDir, path.dirname(file)));
   const outputFile = path.resolve(outputDir, file.slice(0, -5) + ".d.ts");
+  const relativePath = path.relative(path.dirname(outputFile), outputDir);
+  const relativeImport = relativePath
+    ? path.join(relativePath, "common")
+    : "./common";
+
+  const typeName = getTypeNameFromHash(hash);
   fs.writeFileSync(
     outputFile,
-    `export { ${typeName} as default } from "./common";`,
+    `export { ${typeName} as default } from "${relativeImport}";`,
   );
-  console.log(`Finished file ${currentFile} of ${totalJSONFiles}: ${file}`);
+
+  console.log(`Finished file ${currentFile} of ${inputFiles.length}: ${file}`);
   currentFile += 1;
 }
 
@@ -145,6 +147,9 @@ output.write(`type C<A extends any> = {[K in keyof A]: A[K]} & {};\n\n`);
 for (const value of db.values()) {
   const typeName = getTypeNameFromId(value.id);
   const stringShape = stringifyShape(value.shape);
+  if (exportedTypes.has(value.id)) {
+    output.write("export ");
+  }
 
   if (typeof value.shape !== "object") {
     output.write(`type ${typeName} = C<${stringShape}>;\n`);
