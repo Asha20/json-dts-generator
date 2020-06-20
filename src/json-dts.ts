@@ -4,7 +4,7 @@ import * as crypto from "crypto";
 import * as glob from "glob";
 import * as mkdirp from "mkdirp";
 
-type Shape = string | { [key: string]: Shape };
+type Type = string | { [key: string]: Type };
 type JSONValue =
   | string
   | number
@@ -12,9 +12,9 @@ type JSONValue =
   | null
   | JSONValue[]
   | { [key: string]: JSONValue };
-interface IShape {
+interface TypeDeclaration {
   id: number;
-  shape: Shape;
+  type: Type;
 }
 
 /**
@@ -51,14 +51,8 @@ function readJSONSync(file: string): JSONValue {
   return JSON.parse(fs.readFileSync(file, "utf-8"));
 }
 
-/**
- * Traverses the object recursively, generating a shape from it
- * and then adding that shape to the cache.
- *
- * @param obj Shape to be added to cache.
- * @return Hash of the given shape.
- **/
-function getShapeHash(x: JSONValue) {
+/** Traverses an object recursively and generates its TS type. */
+function convertToType(x: JSONValue): string {
   if (typeof x === "string") {
     return "string";
   }
@@ -73,76 +67,83 @@ function getShapeHash(x: JSONValue) {
   }
   if (Array.isArray(x)) {
     if (x.length) {
-      const typeOfFirstElement = getTypeNameFromHash(getShapeHash(x[0]));
-      return getHash(typeOfFirstElement + "[]");
+      const typeOfFirstElement = convertToType(x[0]);
+      return typeOfFirstElement + "[]";
     }
-    return getHash("unknown[]");
+    return createType("unknown[]", true);
   }
 
-  const result: Record<string, Shape> = {};
+  const typeObject: Type = {};
   for (const key of Object.keys(x).sort()) {
-    const hash = getShapeHash(x[key]);
-    result[key] = getTypeNameFromHash(hash);
+    typeObject[key] = convertToType(x[key]);
   }
 
-  return getHash(result);
+  return createType(typeObject);
 }
 
-function getTypeNameFromHash(hash: string) {
-  if (["string", "number", "boolean", "null"].includes(hash)) {
-    return hash;
+/**
+ * Returns a type alias for the given type. Gives a brand new alias and adds
+ * the type to the type cache if the type is new. Alternatively, it reuses
+ * a type alias if the matching type already exists in the cache.
+ * @param type The type to be aliased.
+ * @param unique If true, the type won't be reused and will get its own unique type alias.
+ * @return Type alias for the given type.
+ */
+function createType(type: Type, unique = false) {
+  let hash = createHash(JSON.stringify(type));
+  if (!unique && cache.has(hash)) {
+    return typeAliasFromId(cache.get(hash)!.id);
   }
 
-  if (!db.has(hash)) {
-    throw new Error(`Could not find type entry for hash ${hash}`);
+  const id = cacheId();
+
+  if (unique) {
+    hash += id;
   }
-  return getTypeNameFromId(db.get(hash)!.id);
+
+  const typeDeclaration = { id, type };
+  cache.set(hash, typeDeclaration);
+  const typeName = typeAliasFromId(id);
+  return typeName;
 }
 
-function getTypeNameFromId(id: number) {
+/** A cache mapping hashes of types to the types themselves. */
+const cache = new Map<string, TypeDeclaration>();
+/** Increments the cache id on each call. */
+const cacheId = (() => {
+  let id = 0;
+  return () => id++;
+})();
+
+/** Generates a type alias from a given id. */
+function typeAliasFromId(id: number) {
   return "T" + id;
 }
 
-let id = 0;
-/** A cache mapping hashes of shapes to the shapes themselves. */
-const db = new Map<string, IShape>();
+/** Creates a TS type declaration for a given type. */
+function getTypeDeclaration(declaration: TypeDeclaration) {
+  const typeName = typeAliasFromId(declaration.id);
+  const type = declaration.type;
 
-/**
- * Creates a new entry in the cache for the given shape or
- * returns a hash if such a shape already exists in the cache.
- */
-function getHash(shape: Shape) {
-  const hash = createHash(JSON.stringify(shape));
-  if (db.has(hash)) {
-    return hash;
-  }
-
-  const shapeInterface = { id: id++, shape };
-  db.set(hash, shapeInterface);
-  return hash;
-}
-
-/** Creates a TS type declaration for a given shape. */
-function getTypeDeclaration(typeName: string, shape: Shape) {
-  if (typeof shape !== "object") {
-    return `type ${typeName} = C<${shape}>;`;
+  if (typeof type !== "object") {
+    return `type ${typeName} = C<${type}>;`;
   }
   const result: string[] = [];
-  for (const key of Object.keys(shape)) {
-    result.push(`${key}: ${shape[key]};`);
+  for (const key of Object.keys(type)) {
+    result.push(`${key}: ${type[key]};`);
   }
   const declarations = result.join(" ");
   return `type ${typeName} = C<{ ${declarations} }>;`;
 }
 
 const inputFiles = glob.sync("**/*.json", { cwd: inputDir });
-const exportedTypes = new Set<number>();
+const exportedTypes = new Set<string>();
 let currentFile = 1;
 
 console.log("Parsing JSON files...");
 for (const file of inputFiles) {
-  const hash = getShapeHash(readJSONSync(path.resolve(inputDir, file)));
-  exportedTypes.add(db.get(hash)!.id);
+  const typeName = convertToType(readJSONSync(path.resolve(inputDir, file)));
+  exportedTypes.add(typeName);
 
   mkdirp.sync(path.resolve(outputDir, path.dirname(file)));
   const outputFile = path.resolve(outputDir, file.replace(".json", ".d.ts"));
@@ -151,7 +152,6 @@ for (const file of inputFiles) {
     ? path.join(relativePath, COMMON_FILE)
     : "./" + COMMON_FILE;
 
-  const typeName = getTypeNameFromHash(hash);
   fs.writeFileSync(
     outputFile,
     `export { ${typeName} as default } from "${relativeImport}";`,
@@ -170,10 +170,9 @@ const output = fs.createWriteStream(
 // with Intellisense by expanding them fully, instead of leaving
 // object properties with cryptic type names.
 output.write(`type C<A extends any> = {[K in keyof A]: A[K]} & {};\n\n`);
-for (const value of db.values()) {
-  const typeName = getTypeNameFromId(value.id);
-  const typeDeclaration = getTypeDeclaration(typeName, value.shape);
-  if (exportedTypes.has(value.id)) {
+for (const value of cache.values()) {
+  const typeDeclaration = getTypeDeclaration(value);
+  if (exportedTypes.has(typeAliasFromId(value.id))) {
     output.write("export ");
   }
 
