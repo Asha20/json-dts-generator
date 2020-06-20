@@ -14,8 +14,7 @@ type JSONValue =
   | { [key: string]: JSONValue };
 interface TypeDeclaration {
   id: number;
-  file: string;
-  context: string;
+  contexts: string[];
   type: Type;
 }
 
@@ -35,20 +34,24 @@ parses each into a TS declaration file with matching name and places those
 into OUTPUT-DIR, matching the folder structure inside of INPUT-DIR.
 `.trim();
 
-const UNKNOWN_ARRAY_WARNING = (declarations: TypeDeclaration[]) =>
-  `
+const UNKNOWN_ARRAY_WARNING = (declarations: TypeDeclaration[]) => {
+  const unfinishedTypeAliases = declarations
+    .map(
+      ({ id, contexts }) =>
+        `  type ${typeAlias(id)}, derived from ${contexts[0]}`,
+    )
+    .join("\n");
+
+  return `
 The proper array type for the following type aliases could not be
 inferred because the provided JSON featured empty arrays:
 
-${declarations
-  .map(
-    ({ id, file, context }) =>
-      `  type ${typeAlias(id)}, derived from ${file}:${context}`,
-  )
-  .join("\n")}
+${unfinishedTypeAliases}
 
 These type aliases have been given the type "unknown[]". Opening
-${COMMON_DTS} and manually providing the proper types is recommended.`.trim();
+${COMMON_DTS} and manually providing the proper types is recommended.
+  `.trim();
+};
 
 if (process.argv.length === 3 && ["-h", "--help"].includes(process.argv[2])) {
   console.log(USAGE + "\n\n" + INSTRUCTIONS);
@@ -91,7 +94,10 @@ function convertToType(x: JSONValue, file: string) {
         const typeOfFirstElement = _convertToType(x[0], context + "[0]");
         return typeOfFirstElement + "[]";
       }
-      return createType("unknown[]", file, context, true);
+      // unknown[] types are always made unique so that they can be manually
+      // changed into correct types independently from each other. If all of
+      // them used a single unknown[] type alias, this would be impossible.
+      return createType("unknown[]", context, true);
     }
 
     const typeObject: Type = {};
@@ -102,10 +108,10 @@ function convertToType(x: JSONValue, file: string) {
       typeObject[key] = _convertToType(x[key], context + contextSuffix);
     }
 
-    return createType(typeObject, file, context);
+    return createType(typeObject, context);
   }
 
-  return _convertToType(x, "root");
+  return _convertToType(x, file + ":root");
 }
 
 /** A cache mapping hashes of types to the types themselves. */
@@ -121,15 +127,16 @@ const cacheId = (() => {
  * the type to the type cache if the type is new. Alternatively, it reuses
  * a type alias if the matching type already exists in the cache.
  * @param type The type to be aliased.
- * @param file File from which the type originated.
- * @param context Object property path to the given type.
+ * @param context Origin of the type.
  * @param unique If true, the type won't be reused and will get its own unique type alias.
  * @return Type alias for the given type.
  */
-function createType(type: Type, file: string, context: string, unique = false) {
+function createType(type: Type, context: string, unique = false) {
   let hash = createHash(JSON.stringify(type));
   if (!unique && cache.has(hash)) {
-    return typeAlias(cache.get(hash)!.id);
+    const declaration = cache.get(hash)!;
+    declaration.contexts.push(context);
+    return typeAlias(declaration.id);
   }
 
   const id = cacheId();
@@ -138,7 +145,7 @@ function createType(type: Type, file: string, context: string, unique = false) {
     hash += id;
   }
 
-  const typeDeclaration = { id, file, context, type };
+  const typeDeclaration = { id, contexts: [context], type };
   cache.set(hash, typeDeclaration);
   const typeName = typeAlias(id);
   return typeName;
@@ -166,6 +173,9 @@ function getTypeDeclaration(declaration: TypeDeclaration) {
     }
   }
   const declarations = result.join(" ");
+  if (declarations === "") {
+    return `type ${typeName} = C<{}>;`;
+  }
   return `type ${typeName} = C<{ ${declarations} }>;`;
 }
 
@@ -225,7 +235,15 @@ type C<A extends any> = {[K in keyof A]: A[K]} & {};
     }
 
     output.write(typeDeclaration);
-    output.write(` // ${declaration.file}:${declaration.context}\n`);
+    output.write(" // ");
+    for (let i = 0; i < declaration.contexts.length; i++) {
+      const context = declaration.contexts[i];
+      output.write(context);
+      if (i < declaration.contexts.length - 1) {
+        output.write(", ");
+      }
+    }
+    output.write("\n");
   }
 
   output.close();
