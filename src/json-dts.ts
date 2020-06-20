@@ -19,6 +19,8 @@ interface TypeDeclaration {
   type: Type;
 }
 
+const identifierRegex = /^[$_a-z][$_a-z0-9]*$/i;
+
 /**
  * Declaration file which will store declarations from all inputs.
  * Name chosen as such to hopefully avoid collision with an input file.
@@ -78,7 +80,10 @@ function convertToType(x: JSONValue, file: string) {
 
     const typeObject: Type = {};
     for (const key of Object.keys(x).sort()) {
-      typeObject[key] = _convertToType(x[key], context + "." + key);
+      const contextSuffix = identifierRegex.test(key)
+        ? "." + key
+        : '["' + key + '"]';
+      typeObject[key] = _convertToType(x[key], context + contextSuffix);
     }
 
     return createType(typeObject, file, context);
@@ -138,7 +143,11 @@ function getTypeDeclaration(declaration: TypeDeclaration) {
   }
   const result: string[] = [];
   for (const key of Object.keys(type)) {
-    result.push(`${key}: ${type[key]};`);
+    if (identifierRegex.test(key)) {
+      result.push(`${key}: ${type[key]};`);
+    } else {
+      result.push(`"${key}": ${type[key]};`);
+    }
   }
   const declarations = result.join(" ");
   return `type ${typeName} = C<{ ${declarations} }>;`;
