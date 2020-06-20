@@ -105,7 +105,7 @@ function convertToType(x: JSONValue, file: string) {
 function createType(type: Type, file: string, context: string, unique = false) {
   let hash = createHash(JSON.stringify(type));
   if (!unique && cache.has(hash)) {
-    return typeAliasFromId(cache.get(hash)!.id);
+    return typeAlias(cache.get(hash)!.id);
   }
 
   const id = cacheId();
@@ -116,7 +116,7 @@ function createType(type: Type, file: string, context: string, unique = false) {
 
   const typeDeclaration = { id, file, context, type };
   cache.set(hash, typeDeclaration);
-  const typeName = typeAliasFromId(id);
+  const typeName = typeAlias(id);
   return typeName;
 }
 
@@ -129,13 +129,13 @@ const cacheId = (() => {
 })();
 
 /** Generates a type alias from a given id. */
-function typeAliasFromId(id: number) {
+function typeAlias(id: number) {
   return "T" + id;
 }
 
 /** Creates a TS type declaration for a given type. */
 function getTypeDeclaration(declaration: TypeDeclaration) {
-  const typeName = typeAliasFromId(declaration.id);
+  const typeName = typeAlias(declaration.id);
   const type = declaration.type;
 
   if (typeof type !== "object") {
@@ -188,9 +188,15 @@ const output = fs.createWriteStream(
 // with Intellisense by expanding them fully, instead of leaving
 // object properties with cryptic type names.
 output.write(`type C<A extends any> = {[K in keyof A]: A[K]} & {};\n\n`);
+
+const unknownArrays = new Set<TypeDeclaration>();
 for (const declaration of cache.values()) {
+  if (declaration.type === "unknown[]") {
+    unknownArrays.add(declaration);
+  }
+
   const typeDeclaration = getTypeDeclaration(declaration);
-  if (exportedTypes.has(typeAliasFromId(declaration.id))) {
+  if (exportedTypes.has(typeAlias(declaration.id))) {
     output.write("export ");
   }
 
@@ -200,3 +206,28 @@ for (const declaration of cache.values()) {
 
 output.close();
 console.log(COMMON_FILE + ".d.ts created successfully.");
+
+if (unknownArrays.size === 0) {
+  process.exit(0);
+}
+
+console.log();
+console.log(
+  `
+The proper array type for the following type aliases could not be
+inferred because the provided JSON featured empty arrays:
+`.trim(),
+);
+for (const declaration of unknownArrays) {
+  const typeName = typeAlias(declaration.id);
+  console.log(
+    `  type ${typeName}, derived from ${declaration.file}:${declaration.context}`,
+  );
+}
+
+console.log(
+  `
+These type aliases have been given the type "unknown[]". Opening
+${COMMON_FILE}.d.ts and manually providing the proper types is recommended.
+`.trim(),
+);
