@@ -5,7 +5,14 @@ import * as glob from "glob";
 import * as mkdirp from "mkdirp";
 
 type Shape = string | { [key: string]: Shape };
-interface ShapeInterface {
+type JSONValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JSONValue[]
+  | { [key: string]: JSONValue };
+interface IShape {
   id: number;
   shape: Shape;
 }
@@ -40,7 +47,7 @@ function createHash(str: string) {
   return crypto.createHash("sha1").update(str).digest("base64");
 }
 
-function readJSONSync(file: string) {
+function readJSONSync(file: string): JSONValue {
   return JSON.parse(fs.readFileSync(file, "utf-8"));
 }
 
@@ -51,50 +58,44 @@ function readJSONSync(file: string) {
  * @param obj Shape to be added to cache.
  * @return Hash of the given shape.
  **/
-function getShapeHash(obj: any) {
-  if (typeof obj === "string") {
-    return getHash("string");
+function getShapeHash(x: JSONValue) {
+  if (typeof x === "string") {
+    return "string";
   }
-  if (typeof obj === "number") {
-    return getHash("number");
+  if (typeof x === "number") {
+    return "number";
   }
-  if (typeof obj === "boolean") {
-    return getHash("boolean");
+  if (typeof x === "boolean") {
+    return "boolean";
   }
-  if (obj === null) {
-    return getHash("null");
+  if (x === null) {
+    return "null";
   }
-  if (Array.isArray(obj)) {
-    if (obj.length) {
-      const first = getTypeNameFromHash(getShapeHash(obj[0]));
-      return getHash(first + "[]");
+  if (Array.isArray(x)) {
+    if (x.length) {
+      const typeOfFirstElement = getTypeNameFromHash(getShapeHash(x[0]));
+      return getHash(typeOfFirstElement + "[]");
     }
     return getHash("unknown[]");
   }
 
   const result: Record<string, Shape> = {};
-  for (const key of Object.keys(obj).sort()) {
-    const value = obj[key];
-    if (typeof value === "string") {
-      result[key] = "string";
-    } else if (typeof value === "number") {
-      result[key] = "number";
-    } else if (typeof value === "boolean") {
-      result[key] = "boolean";
-    } else if (value === null) {
-      result[key] = "null";
-    } else if (typeof value === "object") {
-      const hash = getShapeHash(value);
-      result[key] = getTypeNameFromHash(hash);
-    } else {
-      throw new Error("Unhandled value: " + value);
-    }
+  for (const key of Object.keys(x).sort()) {
+    const hash = getShapeHash(x[key]);
+    result[key] = getTypeNameFromHash(hash);
   }
 
   return getHash(result);
 }
 
 function getTypeNameFromHash(hash: string) {
+  if (["string", "number", "boolean", "null"].includes(hash)) {
+    return hash;
+  }
+
+  if (!db.has(hash)) {
+    throw new Error(`Could not find type entry for hash ${hash}`);
+  }
   return getTypeNameFromId(db.get(hash)!.id);
 }
 
@@ -104,7 +105,7 @@ function getTypeNameFromId(id: number) {
 
 let id = 0;
 /** A cache mapping hashes of shapes to the shapes themselves. */
-const db = new Map<string, ShapeInterface>();
+const db = new Map<string, IShape>();
 
 /**
  * Creates a new entry in the cache for the given shape or
@@ -124,14 +125,14 @@ function getHash(shape: Shape) {
 /** Creates a TS type declaration for a given shape. */
 function getTypeDeclaration(typeName: string, shape: Shape) {
   if (typeof shape !== "object") {
-    return `type ${typeName} = C<${shape}>;\n`;
+    return `type ${typeName} = C<${shape}>;`;
   }
   const result: string[] = [];
   for (const key of Object.keys(shape)) {
     result.push(`${key}: ${shape[key]};`);
   }
   const declarations = result.join(" ");
-  return `type ${typeName} = C<{ ${declarations} }>;\n`;
+  return `type ${typeName} = C<{ ${declarations} }>;`;
 }
 
 const inputFiles = glob.sync("**/*.json", { cwd: inputDir });
@@ -144,7 +145,7 @@ for (const file of inputFiles) {
   exportedTypes.add(db.get(hash)!.id);
 
   mkdirp.sync(path.resolve(outputDir, path.dirname(file)));
-  const outputFile = path.resolve(outputDir, file.slice(0, -5) + ".d.ts");
+  const outputFile = path.resolve(outputDir, file.replace(".json", ".d.ts"));
   const relativePath = path.relative(path.dirname(outputFile), outputDir);
   const relativeImport = relativePath
     ? path.join(relativePath, COMMON_FILE)
@@ -176,7 +177,7 @@ for (const value of db.values()) {
     output.write("export ");
   }
 
-  output.write(typeDeclaration);
+  output.write(typeDeclaration + "\n");
 }
 
 output.close();
