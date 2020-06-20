@@ -14,6 +14,8 @@ type JSONValue =
   | { [key: string]: JSONValue };
 interface TypeDeclaration {
   id: number;
+  file: string;
+  context: string;
   type: Type;
 }
 
@@ -52,33 +54,37 @@ function readJSONSync(file: string): JSONValue {
 }
 
 /** Traverses an object recursively and generates its TS type. */
-function convertToType(x: JSONValue): string {
-  if (typeof x === "string") {
-    return "string";
-  }
-  if (typeof x === "number") {
-    return "number";
-  }
-  if (typeof x === "boolean") {
-    return "boolean";
-  }
-  if (x === null) {
-    return "null";
-  }
-  if (Array.isArray(x)) {
-    if (x.length) {
-      const typeOfFirstElement = convertToType(x[0]);
-      return typeOfFirstElement + "[]";
+function convertToType(x: JSONValue, file: string) {
+  function _convertToType(x: JSONValue, context: string): string {
+    if (typeof x === "string") {
+      return "string";
     }
-    return createType("unknown[]", true);
+    if (typeof x === "number") {
+      return "number";
+    }
+    if (typeof x === "boolean") {
+      return "boolean";
+    }
+    if (x === null) {
+      return "null";
+    }
+    if (Array.isArray(x)) {
+      if (x.length) {
+        const typeOfFirstElement = _convertToType(x[0], context + "[0]");
+        return typeOfFirstElement + "[]";
+      }
+      return createType("unknown[]", file, context, true);
+    }
+
+    const typeObject: Type = {};
+    for (const key of Object.keys(x).sort()) {
+      typeObject[key] = _convertToType(x[key], context + "." + key);
+    }
+
+    return createType(typeObject, file, context);
   }
 
-  const typeObject: Type = {};
-  for (const key of Object.keys(x).sort()) {
-    typeObject[key] = convertToType(x[key]);
-  }
-
-  return createType(typeObject);
+  return _convertToType(x, "root");
 }
 
 /**
@@ -86,10 +92,12 @@ function convertToType(x: JSONValue): string {
  * the type to the type cache if the type is new. Alternatively, it reuses
  * a type alias if the matching type already exists in the cache.
  * @param type The type to be aliased.
+ * @param file File from which the type originated.
+ * @param context Object property path to the given type.
  * @param unique If true, the type won't be reused and will get its own unique type alias.
  * @return Type alias for the given type.
  */
-function createType(type: Type, unique = false) {
+function createType(type: Type, file: string, context: string, unique = false) {
   let hash = createHash(JSON.stringify(type));
   if (!unique && cache.has(hash)) {
     return typeAliasFromId(cache.get(hash)!.id);
@@ -101,7 +109,7 @@ function createType(type: Type, unique = false) {
     hash += id;
   }
 
-  const typeDeclaration = { id, type };
+  const typeDeclaration = { id, file, context, type };
   cache.set(hash, typeDeclaration);
   const typeName = typeAliasFromId(id);
   return typeName;
@@ -142,7 +150,8 @@ let currentFile = 1;
 
 console.log("Parsing JSON files...");
 for (const file of inputFiles) {
-  const typeName = convertToType(readJSONSync(path.resolve(inputDir, file)));
+  const json = readJSONSync(path.resolve(inputDir, file));
+  const typeName = convertToType(json, file);
   exportedTypes.add(typeName);
 
   mkdirp.sync(path.resolve(outputDir, path.dirname(file)));
@@ -170,13 +179,14 @@ const output = fs.createWriteStream(
 // with Intellisense by expanding them fully, instead of leaving
 // object properties with cryptic type names.
 output.write(`type C<A extends any> = {[K in keyof A]: A[K]} & {};\n\n`);
-for (const value of cache.values()) {
-  const typeDeclaration = getTypeDeclaration(value);
-  if (exportedTypes.has(typeAliasFromId(value.id))) {
+for (const declaration of cache.values()) {
+  const typeDeclaration = getTypeDeclaration(declaration);
+  if (exportedTypes.has(typeAliasFromId(declaration.id))) {
     output.write("export ");
   }
 
-  output.write(typeDeclaration + "\n");
+  output.write(typeDeclaration);
+  output.write(` // ${declaration.file}:${declaration.context}\n`);
 }
 
 output.close();
