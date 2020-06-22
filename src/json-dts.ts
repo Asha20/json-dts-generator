@@ -12,10 +12,16 @@ type JSONValue =
   | null
   | JSONValue[]
   | { [key: string]: JSONValue };
+
 interface TypeDeclaration {
   id: number;
   contexts: string[];
   type: Type;
+}
+
+interface Cache {
+  map: Map<string, TypeDeclaration>;
+  id(): number;
 }
 
 const identifierRegex = /^[$_a-z][$_a-z0-9]*$/i;
@@ -53,6 +59,11 @@ ${COMMON_DTS} and manually providing the proper types is recommended.
   `.trim();
 };
 
+function createHash(type: Type) {
+  return crypto
+    .createHash("sha1")
+    .update(JSON.stringify(type))
+    .digest("base64");
 }
 
 function readJSONSync(file: string): JSONValue {
@@ -60,7 +71,9 @@ function readJSONSync(file: string): JSONValue {
 }
 
 /** Traverses an object recursively and generates its TS type. */
-function convertToType(x: JSONValue, file: string) {
+function convertToType(cache: Cache, x: JSONValue, file?: string) {
+  const newCache: Cache = { map: new Map(cache.map), id: cache.id };
+
   function _convertToType(x: JSONValue, context: string): string {
     if (typeof x === "string") {
       return "string";
@@ -82,7 +95,7 @@ function convertToType(x: JSONValue, file: string) {
       // unknown[] types are always made unique so that they can be manually
       // changed into correct types independently from each other. If all of
       // them used a single unknown[] type alias, this would be impossible.
-      return createType("unknown[]", context, true);
+      return createType(newCache, "unknown[]", context, true);
     }
 
     const typeObject: Type = {};
@@ -93,45 +106,52 @@ function convertToType(x: JSONValue, file: string) {
       typeObject[key] = _convertToType(x[key], context + contextSuffix);
     }
 
-    return createType(typeObject, context);
+    return createType(newCache, typeObject, context);
   }
 
-  return _convertToType(x, file + ":root");
+  return {
+    type: _convertToType(x, file ? file + ":root" : "root"),
+    cache: newCache,
+  };
 }
 
-/** A cache mapping hashes of types to the types themselves. */
-const cache = new Map<string, TypeDeclaration>();
-/** Increments the cache id on each call. */
-const cacheId = (() => {
-  let id = 0;
-  return () => id++;
-})();
+function createCache(): Cache {
+  let currentId = 0;
+
+  return {
+    map: new Map(),
+    id() {
+      return currentId++;
+    },
+  };
+}
 
 /**
  * Returns a type alias for the given type. Gives a brand new alias and adds
  * the type to the type cache if the type is new. Alternatively, it reuses
  * a type alias if the matching type already exists in the cache.
+ * @param cache Cache of types.
  * @param type The type to be aliased.
  * @param context Origin of the type.
  * @param unique If true, the type won't be reused and will get its own unique type alias.
  * @return Type alias for the given type.
  */
-function createType(type: Type, context: string, unique = false) {
-  let hash = createHash(JSON.stringify(type));
-  if (!unique && cache.has(hash)) {
-    const declaration = cache.get(hash)!;
+function createType(cache: Cache, type: Type, context: string, unique = false) {
+  let hash = createHash(type);
+  if (!unique && cache.map.has(hash)) {
+    const declaration = cache.map.get(hash)!;
     declaration.contexts.push(context);
     return typeAlias(declaration.id);
   }
 
-  const id = cacheId();
+  const id = cache.id();
 
   if (unique) {
     hash += id;
   }
 
   const typeDeclaration = { id, contexts: [context], type };
-  cache.set(hash, typeDeclaration);
+  cache.map.set(hash, typeDeclaration);
   const typeName = typeAlias(id);
   return typeName;
 }
@@ -186,8 +206,13 @@ function main() {
   console.log("Parsing JSON files...");
   for (const file of inputFiles) {
     const json = readJSONSync(path.resolve(inputDir, file));
-    const typeName = convertToType(json, file);
+    const { type: typeName, cache: newCache } = convertToType(
+      cache,
+      json,
+      file,
+    );
     exportedTypes.add(typeName);
+    cache = newCache;
 
     mkdirp.sync(path.resolve(outputDir, path.dirname(file)));
     const outputFile = path.resolve(outputDir, file.replace(".json", ".d.ts"));
@@ -223,7 +248,7 @@ type C<A extends any> = {[K in keyof A]: A[K]} & {};
   output.write("\n\n");
 
   const unknownArrays: TypeDeclaration[] = [];
-  for (const declaration of cache.values()) {
+  for (const declaration of cache.map.values()) {
     if (declaration.type === "unknown[]") {
       unknownArrays.push(declaration);
     }
