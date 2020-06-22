@@ -4,14 +4,19 @@
   "description": "Generate TS declaration files from JSON files.",
   "scripts": {
     "build": "tsc",
-    "watch": "tsc --watch"
+    "watch": "tsc --watch",
+    "test": "jest"
   },
   "author": "Vukašin Stepanović <vukasinstepanovic@gmail.com>",
   "license": "MIT",
   "devDependencies": {
     "@types/glob": "^7.1.1",
+    "@types/jest": "^26.0.0",
     "@types/mkdirp": "^1.0.0",
-    "@types/node": "^14.0.6"
+    "@types/node": "^14.0.6",
+    "jest": "^26.0.1",
+    "ts-jest": "^26.1.0",
+    "typescript": "^3.9.5"
   },
   "dependencies": {
     "glob": "^7.1.6",
