@@ -1,4 +1,4 @@
-import { createCache, createHash, convertToType } from "../src/json-dts";
+import { createCache, createHash, convertToType } from "../src/core";
 
 describe("convertToType()", () => {
   const map = (obj: object) => new Map(Object.entries(obj));
