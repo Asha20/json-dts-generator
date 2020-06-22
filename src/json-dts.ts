@@ -53,21 +53,6 @@ ${COMMON_DTS} and manually providing the proper types is recommended.
   `.trim();
 };
 
-if (process.argv.length === 3 && ["-h", "--help"].includes(process.argv[2])) {
-  console.log(USAGE + "\n\n" + INSTRUCTIONS);
-  process.exit(0);
-}
-
-if (process.argv.length !== 4) {
-  console.error(USAGE);
-  process.exit(1);
-}
-
-const inputDir = path.resolve(process.cwd(), process.argv[2]);
-const outputDir = path.resolve(process.cwd(), process.argv[3]);
-
-function createHash(str: string) {
-  return crypto.createHash("sha1").update(str).digest("base64");
 }
 
 function readJSONSync(file: string): JSONValue {
@@ -180,6 +165,20 @@ function getTypeDeclaration(declaration: TypeDeclaration) {
 }
 
 function main() {
+  if (process.argv.length === 3 && ["-h", "--help"].includes(process.argv[2])) {
+    console.log(USAGE + "\n\n" + INSTRUCTIONS);
+    process.exit(0);
+  }
+
+  if (process.argv.length !== 4) {
+    console.error(USAGE);
+    process.exit(1);
+  }
+
+  let cache = createCache();
+  const inputDir = path.resolve(process.cwd(), process.argv[2]);
+  const outputDir = path.resolve(process.cwd(), process.argv[3]);
+
   const inputFiles = glob.sync("**/*.json", { cwd: inputDir });
   const exportedTypes = new Set<string>();
   let currentFile = 1;
