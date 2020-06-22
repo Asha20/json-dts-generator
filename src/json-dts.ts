@@ -59,7 +59,7 @@ ${COMMON_DTS} and manually providing the proper types is recommended.
   `.trim();
 };
 
-function createHash(type: Type) {
+export function createHash(type: Type) {
   return crypto
     .createHash("sha1")
     .update(JSON.stringify(type))
@@ -71,7 +71,7 @@ function readJSONSync(file: string): JSONValue {
 }
 
 /** Traverses an object recursively and generates its TS type. */
-function convertToType(cache: Cache, x: JSONValue, file?: string) {
+export function convertToType(cache: Cache, x: JSONValue, file?: string) {
   const newCache: Cache = { map: new Map(cache.map), id: cache.id };
 
   function _convertToType(x: JSONValue, context: string): string {
@@ -115,7 +115,7 @@ function convertToType(cache: Cache, x: JSONValue, file?: string) {
   };
 }
 
-function createCache(): Cache {
+export function createCache(): Cache {
   let currentId = 0;
 
   return {
