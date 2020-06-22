@@ -38,7 +38,7 @@ describe("convertToType()", () => {
     expect(result.type).toBe("T0");
     expect(result.cache.map).toEqual(
       map({
-        [createHash("unknown[]") + "0"]: {
+        0: {
           id: 0,
           type: "unknown[]",
           contexts: ["root"],
@@ -91,13 +91,13 @@ describe("convertToType()", () => {
     expect(result.type).toBe("T2");
     expect(result.cache.map).toEqual(
       map({
-        [createHash("unknown[]") + "0"]: {
+        0: {
           id: 0,
           type: "unknown[]",
           contexts: ["root.one"],
         },
 
-        [createHash("unknown[]") + "1"]: {
+        1: {
           id: 1,
           type: "unknown[]",
           contexts: ["root.two"],

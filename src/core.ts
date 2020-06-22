@@ -96,9 +96,9 @@ export function createCache(): Cache {
  * @return Type alias for the given type.
  */
 function createType(cache: Cache, type: Type, context: string, unique = false) {
-  let hash = createHash(type);
-  if (!unique && cache.map.has(hash)) {
-    const declaration = cache.map.get(hash)!;
+  let key = createHash(type);
+  if (!unique && cache.map.has(key)) {
+    const declaration = cache.map.get(key)!;
     declaration.contexts.push(context);
     return typeAlias(declaration.id);
   }
@@ -106,11 +106,11 @@ function createType(cache: Cache, type: Type, context: string, unique = false) {
   const id = cache.id();
 
   if (unique) {
-    hash += id;
+    key = String(id);
   }
 
   const typeDeclaration = { id, contexts: [context], type };
-  cache.map.set(hash, typeDeclaration);
+  cache.map.set(key, typeDeclaration);
   const typeName = typeAlias(id);
   return typeName;
 }
