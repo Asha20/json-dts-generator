@@ -6,10 +6,10 @@ import {
   convertToType,
   createCache,
   typeAlias,
-  getTypeDeclaration,
   JSONValue,
   TypeDeclaration,
 } from "./core";
+import { writeCommonDTS, relativeReExport } from "./output";
 
 if (module.parent) {
   throw new Error(
@@ -75,20 +75,15 @@ let currentFile = 1;
 console.log("Parsing JSON files...");
 for (const file of inputFiles) {
   const json = readJSONSync(path.resolve(inputDir, file));
-  const { type: typeName, cache: newCache } = convertToType(cache, json, file);
-  exportedTypes.add(typeName);
-  cache = newCache;
+  const result = convertToType(cache, json, file);
+  exportedTypes.add(result.type);
+  cache = result.cache;
 
   mkdirp.sync(path.resolve(outputDir, path.dirname(file)));
   const outputFile = path.resolve(outputDir, file.replace(".json", ".d.ts"));
-  const relativePath = path.relative(path.dirname(outputFile), outputDir);
-  const relativeImport = relativePath
-    ? path.join(relativePath, COMMON_FILE)
-    : "./" + COMMON_FILE;
-
   fs.writeFileSync(
     outputFile,
-    `export { ${typeName} as default } from "${relativeImport}";`,
+    relativeReExport(result.type, outputDir, file, COMMON_FILE),
   );
 
   console.log(`Finished file ${currentFile} of ${inputFiles.length}: ${file}`);
@@ -97,40 +92,16 @@ for (const file of inputFiles) {
 
 console.log(`Creating ${COMMON_DTS} file...`);
 const output = fs.createWriteStream(path.resolve(outputDir, COMMON_DTS));
-
-output.write(
-  `
-/**
- * Compute utility which makes resulting types easier to read
- * with IntelliSense by expanding them fully, instead of leaving
- * object properties with cryptic type names.
- */
-type C<A extends any> = {[K in keyof A]: A[K]} & {};
-`.trim(),
-);
-output.write("\n\n");
+writeCommonDTS(output, cache.map.values(), exportedTypes, {
+  computed: true,
+  includeContexts: true,
+});
 
 const unknownArrays: TypeDeclaration[] = [];
 for (const declaration of cache.map.values()) {
   if (declaration.type === "unknown[]") {
     unknownArrays.push(declaration);
   }
-
-  const typeDeclaration = getTypeDeclaration(declaration);
-  if (exportedTypes.has(typeAlias(declaration.id))) {
-    output.write("export ");
-  }
-
-  output.write(typeDeclaration);
-  output.write(" // ");
-  for (let i = 0; i < declaration.contexts.length; i++) {
-    const context = declaration.contexts[i];
-    output.write(context);
-    if (i < declaration.contexts.length - 1) {
-      output.write(", ");
-    }
-  }
-  output.write("\n");
 }
 
 output.close();

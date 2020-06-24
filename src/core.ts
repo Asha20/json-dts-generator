@@ -1,6 +1,6 @@
 import * as crypto from "crypto";
 
-type Type = string | { [key: string]: Type };
+export type Type = string | { [key: string]: Type };
 export type JSONValue =
   | string
   | number
@@ -20,7 +20,7 @@ export interface Cache {
   id(): number;
 }
 
-const identifierRegex = /^[$_a-z][$_a-z0-9]*$/i;
+export const identifierRegex = /^[$_a-z][$_a-z0-9]*$/i;
 
 export function createHash(type: Type) {
   return crypto
@@ -118,27 +118,4 @@ function createType(cache: Cache, type: Type, context: string, unique = false) {
 /** Generates a type alias from a given id. */
 export function typeAlias(id: number) {
   return "T" + id;
-}
-
-/** Creates a TS type declaration for a given type. */
-export function getTypeDeclaration(declaration: TypeDeclaration) {
-  const typeName = typeAlias(declaration.id);
-  const type = declaration.type;
-
-  if (typeof type !== "object") {
-    return `type ${typeName} = C<${type}>;`;
-  }
-  const result: string[] = [];
-  for (const key of Object.keys(type)) {
-    if (identifierRegex.test(key)) {
-      result.push(`${key}: ${type[key]};`);
-    } else {
-      result.push(`"${key}": ${type[key]};`);
-    }
-  }
-  const declarations = result.join(" ");
-  if (declarations === "") {
-    return `type ${typeName} = C<{}>;`;
-  }
-  return `type ${typeName} = C<{ ${declarations} }>;`;
 }

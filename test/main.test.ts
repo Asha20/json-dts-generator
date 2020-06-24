@@ -1,4 +1,11 @@
-import { createCache, createHash, convertToType } from "../src/core";
+import {
+  createCache,
+  createHash,
+  convertToType,
+  TypeDeclaration,
+  Type,
+} from "../src/core";
+import { typeDeclaration } from "../src/output";
 
 describe("convertToType()", () => {
   const map = (obj: object) => new Map(Object.entries(obj));
@@ -110,5 +117,55 @@ describe("convertToType()", () => {
         },
       }),
     );
+  });
+});
+
+describe("typeDeclaration()", () => {
+  const declaration = (
+    id: number,
+    type: Type,
+    contexts: string[] = [],
+  ): TypeDeclaration => ({ id, type, contexts });
+
+  test("non-object type", () => {
+    const input = declaration(0, "string");
+    expect(typeDeclaration(input)).toBe("type T0 = string;");
+  });
+
+  test("object type", () => {
+    const input = declaration(0, { a: "string" });
+    expect(typeDeclaration(input)).toBe("type T0 = { a: string; };");
+  });
+
+  test("exported type", () => {
+    const input = declaration(0, "string");
+    expect(typeDeclaration(input, { exported: true })).toBe(
+      "export type T0 = string;",
+    );
+  });
+
+  test("computed type", () => {
+    const input = declaration(0, "string");
+    expect(typeDeclaration(input, { computed: true })).toBe(
+      "type T0 = C<string>;",
+    );
+  });
+
+  test("with context", () => {
+    const input = declaration(0, "string", ["foo", "bar"]);
+    expect(typeDeclaration(input, { includeContexts: true })).toBe(
+      "type T0 = string; // foo, bar",
+    );
+  });
+
+  test("all together", () => {
+    const input = declaration(0, { foo: "number", bar: "string" }, ["root"]);
+    expect(
+      typeDeclaration(input, {
+        exported: true,
+        computed: true,
+        includeContexts: true,
+      }),
+    ).toBe("export type T0 = C<{ foo: number; bar: string; }>; // root");
   });
 });
