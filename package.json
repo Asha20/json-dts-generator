@@ -1,6 +1,6 @@
 {
   "name": "json-dts-generator",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Generate TS declaration files from JSON files.",
   "homepage": "https://github.com/Asha20/json-dts-generator",
   "repository": {
