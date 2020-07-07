@@ -49,7 +49,8 @@ export function convertToType(cache: Cache, x: JSONValue, file?: string) {
     if (Array.isArray(x)) {
       if (x.length) {
         const typeOfFirstElement = _convertToType(x[0], context + "[0]");
-        return typeOfFirstElement + "[]";
+        return createType(newCache, typeOfFirstElement + "[]", context);
+        // return typeOfFirstElement + "[]";
       }
       // unknown[] types are always made unique so that they can be manually
       // changed into correct types independently from each other. If all of

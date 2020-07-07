@@ -29,8 +29,16 @@ describe("convertToType()", () => {
 
   test("array of primitives", () => {
     const result = convertToType(createCache(), [1, 2, 3]);
-    expect(result.type).toBe("number[]");
-    expect(result.cache.map.size).toBe(0);
+    expect(result.type).toBe("T0");
+    expect(result.cache.map).toEqual(
+      map({
+        [createHash("number[]")]: {
+          id: 0,
+          type: "number[]",
+          contexts: ["root"],
+        },
+      }),
+    );
   });
 
   test("empty array", () => {
