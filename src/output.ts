@@ -1,4 +1,3 @@
-import { WriteStream } from "fs";
 import * as path from "path";
 import { TypeDeclaration, typeAlias, identifierRegex } from "./core";
 
@@ -35,36 +34,28 @@ export function typeDeclaration(
     : typeDecl;
 }
 
-export function writeCommonDTS(
-  out: WriteStream,
+export function* commonDTS(
   declarations: Iterable<TypeDeclaration>,
   exportedTypes: Set<string>,
   { computed = false, includeContexts = false } = {},
 ) {
   if (computed) {
-    out.write(
-      `
+    yield `
 /**
  * Compute utility which makes resulting types easier to read
  * with IntelliSense by expanding them fully, instead of leaving
  * object properties with cryptic type names.
  */
 type C<A extends any> = {[K in keyof A]: A[K]} & {};
-    `.trim(),
-    );
-
-    out.write("\n\n");
+    `.trim() + "\n\n";
   }
 
   for (const declaration of declarations) {
-    out.write(
-      typeDeclaration(declaration, {
-        exported: exportedTypes.has(typeAlias(declaration.id)),
-        computed: computed,
-        includeContexts: includeContexts,
-      }),
-    );
-    out.write("\n");
+    yield typeDeclaration(declaration, {
+      exported: exportedTypes.has(typeAlias(declaration.id)),
+      computed: computed,
+      includeContexts: includeContexts,
+    }) + "\n";
   }
 }
 

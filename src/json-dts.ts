@@ -9,7 +9,7 @@ import {
   JSONValue,
   TypeDeclaration,
 } from "./core";
-import { writeCommonDTS, relativeReExport } from "./output";
+import { commonDTS, relativeReExport } from "./output";
 
 if (module.parent) {
   throw new Error(
@@ -92,10 +92,13 @@ for (const file of inputFiles) {
 
 console.log(`Creating ${COMMON_DTS} file...`);
 const output = fs.createWriteStream(path.resolve(outputDir, COMMON_DTS));
-writeCommonDTS(output, cache.map.values(), exportedTypes, {
+for (const line of commonDTS(cache.map.values(), exportedTypes, {
   computed: true,
   includeContexts: true,
-});
+})) {
+  output.write(line);
+}
+output.close();
 
 const unknownArrays: TypeDeclaration[] = [];
 for (const declaration of cache.map.values()) {
@@ -104,7 +107,6 @@ for (const declaration of cache.map.values()) {
   }
 }
 
-output.close();
 console.log(COMMON_DTS + " created successfully.");
 
 if (unknownArrays.length) {
