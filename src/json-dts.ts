@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import * as fs from "fs";
 import * as path from "path";
 import * as glob from "glob";
@@ -24,7 +26,9 @@ if (module.parent) {
 const COMMON_FILE = "_common";
 const COMMON_DTS = COMMON_FILE + ".d.ts";
 
-const USAGE = "Usage: node json-dts.js INPUT-DIR OUTPUT-DIR";
+const FILENAME = path.basename(__filename);
+
+const USAGE = `Usage: node ${FILENAME} INPUT-DIR OUTPUT-DIR`;
 const INSTRUCTIONS = `
 Reads all JSON files inside INPUT-DIR (including those in subdirectories),
 parses each into a TS declaration file with matching name and places those

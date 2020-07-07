@@ -2,6 +2,13 @@
   "name": "json-dts-generator",
   "version": "0.0.0",
   "description": "Generate TS declaration files from JSON files.",
+  "main": "dist/json-dts.js",
+  "bin": {
+    "json-dts-generator": "dist/json-dts.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
